@@ -1,7 +1,10 @@
-export default function Home() {
+import AdminLayout from "@/src/components/admin/Layout/AdminLayout";
+import Dashboard from "@/src/components/admin/dashboard/Dashboard";
+
+export default function dashboard() {
     return (
-        <div>
-            <h1>Home</h1>
-        </div>
+        <AdminLayout>
+            <Dashboard />
+        </AdminLayout>
     );
 }
