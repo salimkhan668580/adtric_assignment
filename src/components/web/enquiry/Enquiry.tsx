@@ -1,17 +1,63 @@
 "use client";
 
 import React, { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "react-toastify";
+import { createEnquiry } from "@/src/service/webService/enquiry";
+import { createEnquirySchema, CreateEnquiryFormInputs } from "@/src/zod/CreateEnquirySchema";
+
+const DEFAULT_VALUES: CreateEnquiryFormInputs = {
+  parentName: "",
+  studentName: "",
+  classApplyingFor: "",
+  mobile: "",
+  email: "",
+  message: "",
+};
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1 animate-in fade-in duration-150">
+      <svg className="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+        <path
+          fillRule="evenodd"
+          d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+          clipRule="evenodd"
+        />
+      </svg>
+      <span>{message}</span>
+    </p>
+  );
+}
+
+const inputClass = (hasError: boolean) =>
+  `w-full px-3.5 py-2.5 rounded-xl border bg-background text-text-primary text-xs sm:text-sm focus:outline-none focus:bg-surface transition-all ${
+    hasError
+      ? "border-red-500 focus:border-red-500 focus:ring-4 focus:ring-red-500/10"
+      : "border-border focus:border-primary focus:ring-4 focus:ring-primary/10"
+  }`;
 
 export default function Enquiry() {
-  const [parentName, setParentName] = useState("");
-  const [studentName, setStudentName] = useState("");
-  const [selectedClass, setSelectedClass] = useState("");
-  const [mobile, setMobile] = useState("");
-  const [email, setEmail] = useState("");
-  const [message, setMessage] = useState("");
+  const [submittedData, setSubmittedData] = useState<CreateEnquiryFormInputs | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<CreateEnquiryFormInputs>({
+    resolver: zodResolver(createEnquirySchema),
+    defaultValues: DEFAULT_VALUES,
+    mode: "onTouched",
+  });
+
+  const isSubmitted = submittedData !== null;
+  const parentName = submittedData?.parentName ?? "";
+  const studentName = submittedData?.studentName ?? "";
+  const selectedClass = submittedData?.classApplyingFor ?? "";
 
   const classOptions = [
     "Pre-Nursery",
@@ -33,28 +79,25 @@ export default function Enquiry() {
     "Grade 12",
   ];
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    // Prevent default page reload
-    e.preventDefault();
-    setIsLoading(true);
+  const onSubmit = async (data: CreateEnquiryFormInputs) => {
+    setServerError(null);
 
     try {
-      // Simulate quick async submission
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      setIsSubmitted(true);
-    } finally {
-      setIsLoading(false);
+      const response = await createEnquiry(data);
+      toast.success(response?.message || "Enquiry submitted successfully!");
+      setSubmittedData(data);
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : "Failed to submit enquiry. Please try again.";
+      setServerError(msg);
+      toast.error(msg);
     }
   };
 
   const handleReset = () => {
-    setParentName("");
-    setStudentName("");
-    setSelectedClass("");
-    setMobile("");
-    setEmail("");
-    setMessage("");
-    setIsSubmitted(false);
+    reset(DEFAULT_VALUES);
+    setServerError(null);
+    setSubmittedData(null);
   };
 
   return (
@@ -194,7 +237,19 @@ export default function Enquiry() {
                     </p>
                   </div>
 
-                  <form onSubmit={handleSubmit} className="space-y-4">
+                  {serverError && (
+                    <div
+                      role="alert"
+                      className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs sm:text-sm flex items-center gap-2 animate-in fade-in duration-200"
+                    >
+                      <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      <span>{serverError}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
                     {/* Parent Name & Student Name */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {/* Parent Name */}
@@ -204,13 +259,13 @@ export default function Enquiry() {
                         </label>
                         <input
                           id="enq-parent"
-                          name="parentName"
                           type="text"
-                          value={parentName}
-                          onChange={(e) => setParentName(e.target.value)}
+                          autoComplete="name"
                           placeholder="Parent's full name"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-text-primary text-xs sm:text-sm focus:outline-none focus:border-primary focus:bg-surface transition-all"
+                          {...register("parentName")}
+                          className={inputClass(!!errors.parentName)}
                         />
+                        <FieldError message={errors.parentName?.message} />
                       </div>
 
                       {/* Student Name */}
@@ -220,13 +275,12 @@ export default function Enquiry() {
                         </label>
                         <input
                           id="enq-student"
-                          name="studentName"
                           type="text"
-                          value={studentName}
-                          onChange={(e) => setStudentName(e.target.value)}
                           placeholder="Student's full name"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-text-primary text-xs sm:text-sm focus:outline-none focus:border-primary focus:bg-surface transition-all"
+                          {...register("studentName")}
+                          className={inputClass(!!errors.studentName)}
                         />
+                        <FieldError message={errors.studentName?.message} />
                       </div>
                     </div>
 
@@ -239,10 +293,8 @@ export default function Enquiry() {
                         </label>
                         <select
                           id="enq-class"
-                          name="classApplyingFor"
-                          value={selectedClass}
-                          onChange={(e) => setSelectedClass(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-text-primary text-xs sm:text-sm focus:outline-none focus:border-primary focus:bg-surface transition-all cursor-pointer"
+                          {...register("classApplyingFor")}
+                          className={`${inputClass(!!errors.classApplyingFor)} cursor-pointer`}
                         >
                           <option value="">Select Class Applying For</option>
                           {classOptions.map((opt) => (
@@ -251,6 +303,7 @@ export default function Enquiry() {
                             </option>
                           ))}
                         </select>
+                        <FieldError message={errors.classApplyingFor?.message} />
                       </div>
 
                       {/* Mobile Number */}
@@ -260,13 +313,19 @@ export default function Enquiry() {
                         </label>
                         <input
                           id="enq-mobile"
-                          name="mobile"
                           type="tel"
-                          value={mobile}
-                          onChange={(e) => setMobile(e.target.value)}
+                          inputMode="numeric"
+                          autoComplete="tel"
+                          maxLength={10}
                           placeholder="e.g. 9876543210"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-text-primary text-xs sm:text-sm focus:outline-none focus:border-primary focus:bg-surface transition-all"
+                          {...register("mobile", {
+                            onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+                              e.target.value = e.target.value.replace(/\D/g, "");
+                            },
+                          })}
+                          className={inputClass(!!errors.mobile)}
                         />
+                        <FieldError message={errors.mobile?.message} />
                       </div>
                     </div>
 
@@ -280,13 +339,13 @@ export default function Enquiry() {
                       </div>
                       <input
                         id="enq-email"
-                        name="email"
                         type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        autoComplete="email"
                         placeholder="parent.email@example.com"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-text-primary text-xs sm:text-sm focus:outline-none focus:border-primary focus:bg-surface transition-all"
+                        {...register("email")}
+                        className={inputClass(!!errors.email)}
                       />
+                      <FieldError message={errors.email?.message} />
                     </div>
 
                     {/* Message (Optional) */}
@@ -299,13 +358,12 @@ export default function Enquiry() {
                       </div>
                       <textarea
                         id="enq-message"
-                        name="message"
                         rows={3}
-                        value={message}
-                        onChange={(e) => setMessage(e.target.value)}
                         placeholder="Any queries regarding admissions, curriculum, transport, etc."
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-text-primary text-xs sm:text-sm focus:outline-none focus:border-primary focus:bg-surface transition-all resize-none"
+                        {...register("message")}
+                        className={`${inputClass(!!errors.message)} resize-none`}
                       />
+                      <FieldError message={errors.message?.message} />
                     </div>
 
                     {/* Submit Button */}
@@ -313,10 +371,10 @@ export default function Enquiry() {
                       <button
                         id="enquiry-submit-btn"
                         type="submit"
-                        disabled={isLoading}
-                        className="w-full py-3.5 px-6 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-primary to-primary-dark hover:opacity-95 active:scale-[0.99] shadow-lg shadow-primary/25 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                        disabled={isSubmitting}
+                        className="w-full py-3.5 px-6 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-primary to-primary-dark hover:opacity-95 active:scale-[0.99] shadow-lg shadow-primary/25 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        {isLoading ? (
+                        {isSubmitting ? (
                           <>
                             <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />

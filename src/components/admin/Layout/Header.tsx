@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { clearAuthTokenCookie } from "@/src/lib/authCookie";
 
 export default function Header() {
   const router = useRouter();
@@ -12,6 +13,7 @@ export default function Header() {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
 
     const handleClickOutside = (e: MouseEvent) => {
@@ -55,9 +57,8 @@ export default function Header() {
 
             {/* Chevron */}
             <svg
-              className={`w-3.5 h-3.5 text-text-secondary transition-transform duration-200 ${
-                dropdownOpen ? "rotate-180" : ""
-              }`}
+              className={`w-3.5 h-3.5 text-text-secondary transition-transform duration-200 ${dropdownOpen ? "rotate-180" : ""
+                }`}
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -139,6 +140,9 @@ export default function Header() {
                   type="button"
                   onClick={() => {
                     setShowLogoutModal(false);
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    clearAuthTokenCookie();
                     router.push("/admin/login");
                   }}
                   className="py-2.5 px-4 rounded-xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 shadow-md shadow-rose-600/20 transition-all cursor-pointer"

@@ -1,74 +1,145 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "react-toastify";
 import {
   NewsCategory,
   NewsEventItem,
-  getStoredNewsEvents,
-  saveStoredNewsEvents,
+  cacheNewsEventItems,
 } from "./types";
+import eventService from "@/src/service/adminService/event.service";
 
-export default function NewsEventsList() {
-  const [items, setItems] = useState<NewsEventItem[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string>("All");
-  const [publishedFilter, setPublishedFilter] = useState<string>("All");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(6);
+export type NewsEventsListProps = {
+  items: NewsEventItem[];
+  total: number;
+  totalPages: number;
+  page: number;
+  itemsPerPage: number;
+  categoryFilter: "All" | "Event" | "News" | "Achievement";
+  publishedFilter: "All" | "Published" | "Draft";
+  searchQuery: string;
+  loadError?: string | null;
+};
+
+function buildListUrl(opts: {
+  page?: number;
+  category?: string;
+  status?: string;
+  search?: string;
+}) {
+  const params = new URLSearchParams();
+  if (opts.page && opts.page > 1) params.set("page", String(opts.page));
+  if (opts.category && opts.category !== "All") params.set("category", opts.category);
+  if (opts.status && opts.status !== "All") params.set("status", opts.status);
+  if (opts.search?.trim()) params.set("search", opts.search.trim());
+  const q = params.toString();
+  return q ? `/admin/news-events?${q}` : "/admin/news-events";
+}
+
+export default function NewsEventsList({
+  items: serverItems,
+  total: totalItems,
+  totalPages,
+  page: currentPage,
+  itemsPerPage,
+  categoryFilter,
+  publishedFilter,
+  searchQuery,
+  loadError = null,
+}: NewsEventsListProps) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [searchInput, setSearchInput] = useState(searchQuery);
+  const [publishOverrides, setPublishOverrides] = useState<Record<string, boolean>>({});
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [previewItem, setPreviewItem] = useState<NewsEventItem | null>(null);
 
   useEffect(() => {
-    setItems(getStoredNewsEvents());
-  }, []);
+    cacheNewsEventItems(serverItems);
+  }, [serverItems]);
+
+  const items = useMemo(
+    () =>
+      serverItems.map((it) =>
+        publishOverrides[it.id] !== undefined
+          ? { ...it, published: publishOverrides[it.id] }
+          : it
+      ),
+    [serverItems, publishOverrides]
+  );
+
+  useEffect(() => {
+    if (loadError) toast.error(loadError);
+  }, [loadError]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (searchInput.trim() === searchQuery.trim()) return;
+      startTransition(() => {
+        router.push(
+          buildListUrl({
+            page: 1,
+            category: categoryFilter,
+            status: publishedFilter,
+            search: searchInput,
+          })
+        );
+      });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput, searchQuery, categoryFilter, publishedFilter, router]);
+
+  const navigate = (opts: {
+    page?: number;
+    category?: string;
+    status?: string;
+    search?: string;
+  }) => {
+    startTransition(() => {
+      router.push(buildListUrl(opts));
+    });
+  };
+
+  const hasActiveFilters =
+    categoryFilter !== "All" || publishedFilter !== "All" || searchInput.trim() !== "";
+
+  const handleResetFilters = () => {
+    setSearchInput("");
+    navigate({ page: 1, category: "All", status: "All", search: "" });
+  };
 
   const handleTogglePublished = (id: string) => {
-    const updated = items.map((it) =>
-      it.id === id ? { ...it, published: !it.published } : it
-    );
-    setItems(updated);
-    saveStoredNewsEvents(updated);
+    const current = items.find((it) => it.id === id)?.published ?? false;
+    setPublishOverrides((prev) => ({ ...prev, [id]: !current }));
   };
 
-  const handleDelete = (id: string) => {
-    const updated = items.filter((it) => it.id !== id);
-    setItems(updated);
-    saveStoredNewsEvents(updated);
-    setDeleteConfirmId(null);
+  const handleDelete = async (id: string) => {
+    setIsDeleting(true);
+    try {
+      const response = await eventService.deleteEvent(id);
+      toast.success(response?.message || "Event deleted successfully!");
+      setDeleteConfirmId(null);
+      if (items.length === 1 && currentPage > 1) {
+        navigate({
+          page: currentPage - 1,
+          category: categoryFilter,
+          status: publishedFilter,
+          search: searchQuery,
+        });
+      } else {
+        router.refresh();
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete event.");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
-  // Filtered
-  const filtered = useMemo(() => {
-    return items.filter((item) => {
-      const matchesCategory =
-        categoryFilter === "All" || item.category === categoryFilter;
-
-      const matchesPublished =
-        publishedFilter === "All"
-          ? true
-          : publishedFilter === "Published"
-          ? item.published
-          : !item.published;
-
-      const q = searchQuery.toLowerCase().trim();
-      const matchesSearch =
-        !q ||
-        item.title.toLowerCase().includes(q) ||
-        item.slug.toLowerCase().includes(q) ||
-        item.shortDescription.toLowerCase().includes(q);
-
-      return matchesCategory && matchesPublished && matchesSearch;
-    });
-  }, [items, categoryFilter, publishedFilter, searchQuery]);
-
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
   const validCurrentPage = Math.min(currentPage, totalPages);
-  const paginated = useMemo(() => {
-    const start = (validCurrentPage - 1) * itemsPerPage;
-    return filtered.slice(start, start + itemsPerPage);
-  }, [filtered, validCurrentPage, itemsPerPage]);
 
   const getCategoryBadge = (cat: NewsCategory) => {
     switch (cat) {
@@ -115,10 +186,14 @@ export default function NewsEventsList() {
             <button
               key={cat}
               type="button"
-              onClick={() => {
-                setCategoryFilter(cat);
-                setCurrentPage(1);
-              }}
+              onClick={() =>
+                navigate({
+                  page: 1,
+                  category: cat,
+                  status: publishedFilter,
+                  search: searchQuery,
+                })
+              }
               className={`px-3.5 py-1.5 rounded-lg transition-all whitespace-nowrap cursor-pointer ${
                 categoryFilter === cat
                   ? "bg-secondary text-white font-semibold shadow-sm"
@@ -134,10 +209,14 @@ export default function NewsEventsList() {
           {/* Published filter */}
           <select
             value={publishedFilter}
-            onChange={(e) => {
-              setPublishedFilter(e.target.value);
-              setCurrentPage(1);
-            }}
+            onChange={(e) =>
+              navigate({
+                page: 1,
+                category: categoryFilter,
+                status: e.target.value,
+                search: searchQuery,
+              })
+            }
             className="py-1.5 px-3 rounded-xl border border-border bg-background text-text-primary text-xs focus:outline-none focus:border-primary transition-all cursor-pointer"
           >
             <option value="All">All Statuses</option>
@@ -154,15 +233,26 @@ export default function NewsEventsList() {
             </div>
             <input
               type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search title, slug..."
               className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-border bg-background text-text-primary text-xs placeholder:text-text-secondary/60 focus:outline-none focus:border-primary focus:bg-surface transition-all"
             />
           </div>
+
+          {/* Reset filters */}
+          <button
+            type="button"
+            onClick={handleResetFilters}
+            disabled={!hasActiveFilters}
+            className="inline-flex items-center gap-1.5 py-1.5 px-3 rounded-xl border border-border bg-background text-text-secondary text-xs font-medium hover:text-primary hover:border-primary/40 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-text-secondary disabled:hover:border-border"
+            title="Reset all filters"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+            </svg>
+            <span>Reset</span>
+          </button>
         </div>
       </div>
 
@@ -181,14 +271,20 @@ export default function NewsEventsList() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
-              {paginated.length === 0 ? (
+              {isPending ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-12 text-text-secondary text-sm">
+                    Loading news and events...
+                  </td>
+                </tr>
+              ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="text-center py-12 text-text-secondary text-sm">
                     No news or events found matching your criteria.
                   </td>
                 </tr>
               ) : (
-                paginated.map((item) => (
+                items.map((item) => (
                   <tr key={item.id} className="hover:bg-background/50 transition-colors">
                     {/* Cover Thumbnail */}
                     <td className="py-3.5 px-5">
@@ -291,16 +387,23 @@ export default function NewsEventsList() {
         {/* Pagination Bar */}
         <div className="py-3.5 px-5 border-t border-border bg-background/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-text-secondary">
           <div>
-            Showing <span className="font-semibold text-text-primary">{filtered.length === 0 ? 0 : (validCurrentPage - 1) * itemsPerPage + 1}</span> to{" "}
-            <span className="font-semibold text-text-primary">{Math.min(validCurrentPage * itemsPerPage, filtered.length)}</span> of{" "}
-            <span className="font-semibold text-text-primary">{filtered.length}</span> items
+            Showing <span className="font-semibold text-text-primary">{totalItems === 0 ? 0 : (validCurrentPage - 1) * itemsPerPage + 1}</span> to{" "}
+            <span className="font-semibold text-text-primary">{Math.min(validCurrentPage * itemsPerPage, totalItems)}</span> of{" "}
+            <span className="font-semibold text-text-primary">{totalItems}</span> items
           </div>
 
           <div className="flex items-center gap-1 self-center sm:self-auto">
             <button
               type="button"
               disabled={validCurrentPage <= 1}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              onClick={() =>
+                navigate({
+                  page: Math.max(1, validCurrentPage - 1),
+                  category: categoryFilter,
+                  status: publishedFilter,
+                  search: searchQuery,
+                })
+              }
               className="px-3 py-1.5 rounded-lg border border-border bg-surface text-text-primary disabled:opacity-40 disabled:cursor-not-allowed hover:bg-background transition-colors cursor-pointer"
             >
               Previous
@@ -310,7 +413,14 @@ export default function NewsEventsList() {
               <button
                 key={pageNum}
                 type="button"
-                onClick={() => setCurrentPage(pageNum)}
+                onClick={() =>
+                  navigate({
+                    page: pageNum,
+                    category: categoryFilter,
+                    status: publishedFilter,
+                    search: searchQuery,
+                  })
+                }
                 className={`w-8 h-8 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                   validCurrentPage === pageNum
                     ? "bg-primary text-white shadow-sm shadow-primary/30"
@@ -324,7 +434,14 @@ export default function NewsEventsList() {
             <button
               type="button"
               disabled={validCurrentPage >= totalPages}
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() =>
+                navigate({
+                  page: Math.min(totalPages, validCurrentPage + 1),
+                  category: categoryFilter,
+                  status: publishedFilter,
+                  search: searchQuery,
+                })
+              }
               className="px-3 py-1.5 rounded-lg border border-border bg-surface text-text-primary disabled:opacity-40 disabled:cursor-not-allowed hover:bg-background transition-colors cursor-pointer"
             >
               Next
@@ -337,7 +454,7 @@ export default function NewsEventsList() {
       {deleteConfirmId && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
-          onClick={() => setDeleteConfirmId(null)}
+          onClick={() => !isDeleting && setDeleteConfirmId(null)}
         >
           <div
             className="bg-surface border border-border rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4"
@@ -357,17 +474,19 @@ export default function NewsEventsList() {
             <div className="grid grid-cols-2 gap-3 pt-2">
               <button
                 type="button"
+                disabled={isDeleting}
                 onClick={() => setDeleteConfirmId(null)}
-                className="py-2 px-4 rounded-xl border border-border bg-surface text-text-secondary text-xs font-semibold hover:bg-background transition-colors cursor-pointer"
+                className="py-2 px-4 rounded-xl border border-border bg-surface text-text-secondary text-xs font-semibold hover:bg-background transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 type="button"
+                disabled={isDeleting}
                 onClick={() => handleDelete(deleteConfirmId)}
-                className="py-2 px-4 rounded-xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors cursor-pointer"
+                className="py-2 px-4 rounded-xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Delete
+                {isDeleting ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>

@@ -1,3 +1,5 @@
+import type { ApiEvent, EventCategory } from "@/src/service/adminService/event.service";
+
 export type NewsCategory = "News" | "Event" | "Achievement";
 
 export interface NewsEventItem {
@@ -116,6 +118,63 @@ export function getStoredNewsEvents(): NewsEventItem[] {
     return JSON.parse(data);
   } catch {
     return INITIAL_NEWS_EVENTS;
+  }
+}
+
+const CATEGORY_LABELS: Record<EventCategory, NewsCategory> = {
+  event: "Event",
+  news: "News",
+  achievement: "Achievement",
+};
+
+export function resolveImageUrl(path?: string): string {
+  if (!path) return "";
+  if (/^(https?:|data:|blob:)/.test(path)) return path;
+  const base = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
+  return `${base}/${path.replace(/^\/+/, "")}`;
+}
+
+export function toNewsEventItem(e: ApiEvent): NewsEventItem {
+  return {
+    id: e._id ?? e.id ?? e.slug,
+    title: e.title,
+    slug: e.slug,
+    category: CATEGORY_LABELS[e.category] ?? "Event",
+    date: e.date ? e.date.split("T")[0] : "",
+    imageUrl: resolveImageUrl(e.coverImage),
+    shortDescription: e.shortDescription ?? "",
+    content: e.longDescription ?? "",
+    published: Boolean(e.publishedStatus),
+    createdAt: e.createdAt ?? "",
+  };
+}
+
+const CACHE_KEY = "adtric_news_events_cache";
+
+export function cacheNewsEventItems(items: NewsEventItem[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    const existing: Record<string, NewsEventItem> = JSON.parse(
+      localStorage.getItem(CACHE_KEY) || "{}"
+    );
+    items.forEach((it) => {
+      existing[it.id] = it;
+    });
+    localStorage.setItem(CACHE_KEY, JSON.stringify(existing));
+  } catch (err) {
+    console.error("Failed to cache news events", err);
+  }
+}
+
+export function getCachedNewsEventRaw(id: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const all: Record<string, NewsEventItem> = JSON.parse(
+      localStorage.getItem(CACHE_KEY) || "{}"
+    );
+    return all[id] ? JSON.stringify(all[id]) : null;
+  } catch {
+    return null;
   }
 }
 

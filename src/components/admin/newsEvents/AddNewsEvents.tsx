@@ -3,13 +3,13 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { toast } from "react-toastify";
 import {
   NewsCategory,
-  NewsEventItem,
   generateSlug,
   getStoredNewsEvents,
-  saveStoredNewsEvents,
 } from "./types";
+import eventService, { EventCategory } from "@/src/service/adminService/event.service";
 
 export default function AddNewsEvents() {
   const router = useRouter();
@@ -20,6 +20,7 @@ export default function AddNewsEvents() {
   const [category, setCategory] = useState<NewsCategory>("Event");
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [shortDescription, setShortDescription] = useState("");
   const [content, setContent] = useState("");
@@ -62,6 +63,7 @@ export default function AddNewsEvents() {
       return;
     }
 
+    setImageFile(file);
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === "string") {
@@ -73,10 +75,11 @@ export default function AddNewsEvents() {
 
   const handleRemoveImage = () => {
     setImagePreview("");
+    setImageFile(null);
     setImageError(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -90,7 +93,7 @@ export default function AddNewsEvents() {
       return;
     }
 
-    if (!imagePreview) {
+    if (!imageFile) {
       setFormError("Please upload a cover image (max 2 MB, JPG/PNG/WebP).");
       return;
     }
@@ -107,27 +110,26 @@ export default function AddNewsEvents() {
 
     setIsSubmitting(true);
 
-    const stored = getStoredNewsEvents();
-    const existingSlugs = stored.map((s) => s.slug);
-
-    // Ensure unique slug
-    const finalSlug = generateSlug(slug || title, existingSlugs);
-
-    const newItem: NewsEventItem = {
-      id: "ne-" + Date.now(),
-      title: title.trim(),
-      slug: finalSlug,
-      category,
-      date,
-      imageUrl: imagePreview,
-      shortDescription: shortDescription.trim(),
-      content: content.trim(),
-      published,
-      createdAt: new Date().toISOString().replace("T", " ").substring(0, 16),
-    };
-
-    saveStoredNewsEvents([newItem, ...stored]);
-    router.push("/admin/news-events");
+    try {
+      const response = await eventService.createEvent({
+        title: title.trim(),
+        slug: slug.trim(),
+        category: category.toLowerCase() as EventCategory,
+        publishedStatus: published,
+        date,
+        shortDescription: shortDescription.trim(),
+        longDescription: content.trim(),
+        coverImage: imageFile,
+      });
+      toast.success(response?.message || "Event created successfully!");
+      router.push("/admin/news-events");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to create event.";
+      setFormError(msg);
+      toast.error(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

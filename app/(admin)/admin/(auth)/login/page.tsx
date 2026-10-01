@@ -1,6 +1,5 @@
 import Login from "@/src/components/admin/auth/login";
 
-
-export default function login() {
-    return <Login/>
-}
+export default function LoginPage() {
+    return <Login />;
+}

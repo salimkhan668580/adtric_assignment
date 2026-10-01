@@ -1,70 +1,119 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
+import { toast } from "react-toastify";
 import {
   NewsCategory,
   NewsEventItem,
-  INITIAL_NEWS_EVENTS,
   generateSlug,
-  getStoredNewsEvents,
-  saveStoredNewsEvents,
+  getCachedNewsEventRaw,
+  cacheNewsEventItems,
+  toNewsEventItem,
 } from "./types";
+import eventService, {
+  EventCategory,
+  UpdateEventPayload,
+} from "@/src/service/adminService/event.service";
 
 interface EditNewsEventsProps {
   id?: string;
+  initialItem?: NewsEventItem | null;
 }
 
-export default function EditNewsEvents({ id }: EditNewsEventsProps) {
-  const router = useRouter();
+const subscribeToStorage = (onChange: () => void) => {
+  window.addEventListener("storage", onChange);
+  return () => window.removeEventListener("storage", onChange);
+};
+
+export default function EditNewsEvents({ id, initialItem }: EditNewsEventsProps) {
   const routeParams = useParams();
   const targetId = id || (routeParams?.id as string);
 
-  const [item, setItem] = useState<NewsEventItem | null>(() => {
-    const all = typeof window !== "undefined" ? getStoredNewsEvents() : INITIAL_NEWS_EVENTS;
-    return all.find((e) => e.id === targetId) || INITIAL_NEWS_EVENTS.find((e) => e.id === targetId) || null;
-  });
+  const raw = useSyncExternalStore(
+    subscribeToStorage,
+    () => getCachedNewsEventRaw(targetId),
+    () => null
+  );
+  const cachedItem = useMemo<NewsEventItem | null>(
+    () => (raw ? (JSON.parse(raw) as NewsEventItem) : null),
+    [raw]
+  );
 
-  const [title, setTitle] = useState(() => item?.title || "");
-  const [slug, setSlug] = useState(() => item?.slug || "");
-  const [category, setCategory] = useState<NewsCategory>(() => item?.category || "Event");
-  const [date, setDate] = useState(() => item?.date || "");
-  const [imagePreview, setImagePreview] = useState<string>(() => item?.imageUrl || "");
+  const [fetched, setFetched] = useState<{ id: string; item: NewsEventItem | null } | null>(null);
+  const isCached = Boolean(raw);
+  const serverProvided = initialItem !== undefined;
+
+  useEffect(() => {
+    if (initialItem) {
+      cacheNewsEventItems([initialItem]);
+    }
+  }, [initialItem]);
+
+  useEffect(() => {
+    if (serverProvided || isCached || !targetId) return;
+    let cancelled = false;
+
+    eventService
+      .getEvents({ page: 1, limit: 1000 })
+      .then((res) => {
+        if (cancelled) return;
+        const mapped = res.events.map(toNewsEventItem);
+        cacheNewsEventItems(mapped);
+        setFetched({ id: targetId, item: mapped.find((e) => e.id === targetId) ?? null });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        toast.error(err instanceof Error ? err.message : "Failed to load event.");
+        setFetched({ id: targetId, item: null });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [serverProvided, isCached, targetId]);
+
+  const item =
+    initialItem ?? cachedItem ?? (fetched?.id === targetId ? fetched.item : null);
+  const isLoading = !item && !serverProvided && fetched?.id !== targetId;
+
+  if (!item) {
+    return (
+      <div className="p-8 text-center text-text-secondary">
+        <p>{isLoading ? "Loading event..." : "Event not found."}</p>
+        <Link href="/admin/news-events" className="mt-2 text-primary underline block text-sm">
+          Back to list
+        </Link>
+      </div>
+    );
+  }
+
+  return <EditNewsEventsForm key={item.id} item={item} />;
+}
+
+function EditNewsEventsForm({ item }: { item: NewsEventItem }) {
+  const router = useRouter();
+
+  const [title, setTitle] = useState(item.title);
+  const [slug, setSlug] = useState(item.slug);
+  const [category, setCategory] = useState<NewsCategory>(item.category);
+  const [date, setDate] = useState(item.date);
+  const [imagePreview, setImagePreview] = useState<string>(item.imageUrl);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
-  const [shortDescription, setShortDescription] = useState(() => item?.shortDescription || "");
-  const [content, setContent] = useState(() => item?.content || "");
-  const [published, setPublished] = useState<boolean>(() => item?.published ?? true);
+  const [shortDescription, setShortDescription] = useState(item.shortDescription);
+  const [content, setContent] = useState(item.content);
+  const [published, setPublished] = useState<boolean>(item.published);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!targetId) return;
-    const list = getStoredNewsEvents();
-    const found = list.find((e) => e.id === targetId) || INITIAL_NEWS_EVENTS.find((e) => e.id === targetId);
-    if (found) {
-      setItem(found);
-      setTitle(found.title);
-      setSlug(found.slug);
-      setCategory(found.category);
-      setDate(found.date);
-      setImagePreview(found.imageUrl);
-      setShortDescription(found.shortDescription);
-      setContent(found.content);
-      setPublished(found.published);
-    }
-  }, [targetId]);
-
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newTitle = e.target.value;
-    setTitle(newTitle);
+    setTitle(e.target.value);
   };
 
   const handleRegenerateSlug = () => {
-    const stored = getStoredNewsEvents();
-    const existingSlugs = stored.map((s) => s.slug);
-    const newSlug = generateSlug(title, existingSlugs, item?.slug);
-    setSlug(newSlug);
+    setSlug(generateSlug(title));
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,6 +133,7 @@ export default function EditNewsEvents({ id }: EditNewsEventsProps) {
       return;
     }
 
+    setImageFile(file);
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === "string") {
@@ -95,10 +145,11 @@ export default function EditNewsEvents({ id }: EditNewsEventsProps) {
 
   const handleRemoveImage = () => {
     setImagePreview("");
+    setImageFile(null);
     setImageError(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -127,45 +178,36 @@ export default function EditNewsEvents({ id }: EditNewsEventsProps) {
       return;
     }
 
+    const changes: UpdateEventPayload = {};
+    if (title.trim() !== item.title) changes.title = title.trim();
+    if (slug.trim() !== item.slug) changes.slug = slug.trim();
+    if (category !== item.category) changes.category = category.toLowerCase() as EventCategory;
+    if (date !== item.date) changes.date = date;
+    if (published !== item.published) changes.publishedStatus = published;
+    if (shortDescription.trim() !== item.shortDescription)
+      changes.shortDescription = shortDescription.trim();
+    if (content.trim() !== item.content) changes.longDescription = content.trim();
+    if (imageFile) changes.coverImage = imageFile;
+
+    if (Object.keys(changes).length === 0) {
+      toast.info("No changes to save.");
+      return;
+    }
+
     setIsSubmitting(true);
 
-    const stored = getStoredNewsEvents();
-    const existingSlugs = stored.map((s) => s.slug);
-
-    // Keep slug unique against others
-    const finalSlug = generateSlug(slug, existingSlugs, item?.slug);
-
-    const updatedList = stored.map((curr) => {
-      if (curr.id === id) {
-        return {
-          ...curr,
-          title: title.trim(),
-          slug: finalSlug,
-          category,
-          date,
-          imageUrl: imagePreview,
-          shortDescription: shortDescription.trim(),
-          content: content.trim(),
-          published,
-        };
-      }
-      return curr;
-    });
-
-    saveStoredNewsEvents(updatedList);
-    router.push("/admin/news-events");
+    try {
+      const response = await eventService.updateEvent(item.id, changes);
+      toast.success(response?.message || "Event updated successfully!");
+      router.push("/admin/news-events");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to update event.";
+      setFormError(msg);
+      toast.error(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
-
-  if (!item) {
-    return (
-      <div className="p-8 text-center text-text-secondary">
-        <p>Loading or item not found...</p>
-        <Link href="/admin/news-events" className="mt-2 text-primary underline block text-sm">
-          Back to list
-        </Link>
-      </div>
-    );
-  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
