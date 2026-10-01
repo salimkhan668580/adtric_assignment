@@ -20,4 +20,6 @@ export const env = {
   JWT_SECRET: required("JWT_SECRET"),
   JWT_EXPIRES_IN: (process.env.JWT_EXPIRES_IN || "7d") as SignOptions["expiresIn"],
   WEBHOOK_URL: process.env.WEBHOOK_URL,
+  // Allowed CORS origin; defaults to allow all in development if not set
+  CORS_ORIGIN: process.env.CORS_ORIGIN || "*",
 };

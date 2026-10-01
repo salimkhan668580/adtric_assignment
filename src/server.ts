@@ -1,13 +1,13 @@
 import path from "path";
 import express from "express";
 import mongoose from "mongoose";
+import cors from "cors";
+import morgan from "morgan";
+import dns from "node:dns";
 import { env } from "./config/env.js";
 import { seedAdmin } from "./seeders/admin.seeder.js";
 import adminRoutes from "./routes/admin.routes.js";
 import userRoutes from "./routes/user.route.js";
-import morgan from 'morgan'
-import cors from "cors";
-import dns from "node:dns";
 
 dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
@@ -15,12 +15,11 @@ const app = express();
 
 app.use(express.json());
 app.use(morgan("dev"));
-app.use(cors());
+app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
 app.use("/upload", express.static(path.join(process.cwd(), "upload")));
 
-// Routes
-app.use('/admin', adminRoutes);
-app.use('/', userRoutes);
+app.use("/admin", adminRoutes);
+app.use("/", userRoutes);
 
 const startServer = async () => {
   try {

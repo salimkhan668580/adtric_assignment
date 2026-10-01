@@ -11,7 +11,8 @@ export const createEnquirySchema = z.object({
   mobile: z
     .string({ error: "Mobile is required" })
     .trim()
-    .regex(/^\+?\d{10,15}$/, "Mobile must be 10 to 15 digits"),
+    // Indian mobile: optional +91 or 91 prefix, then 10 digits starting with 6–9
+    .regex(/^(\+91|91)?[6-9]\d{9}$/, "Enter a valid 10-digit Indian mobile number"),
   email: optionalText(z.string().trim().toLowerCase().email("Invalid email")),
   message: optionalText(z.string().trim().max(1000)),
 });

@@ -1,6 +1,5 @@
 import mongoose, { Schema } from "mongoose";
 
-
 export interface IEvent {
     title: string;
     slug: string;
@@ -10,7 +9,6 @@ export interface IEvent {
     date: Date;
     shortDescription: string;
     longDescription: string;
-    
 }
 
 const eventSchema = new Schema<IEvent>({
@@ -42,13 +40,10 @@ const eventSchema = new Schema<IEvent>({
     },
     shortDescription: {
         type: String,
-      
     },
     longDescription: {
         type: String,
-        
     },
-
 }, { timestamps: true });
 
 export const Event = mongoose.model<IEvent>("Event", eventSchema);

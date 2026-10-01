@@ -18,9 +18,6 @@ export const authenticateAdmin = async (req: Request, res: Response, next: NextF
     }
 
     const token = authHeader.split(" ")[1];
-    if (!token) {
-      return res.status(401).json({ message: "Token is required" });
-    }
 
     let payload;
     try {
