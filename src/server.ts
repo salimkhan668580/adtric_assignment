@@ -7,6 +7,9 @@ import adminRoutes from "./routes/admin.routes.js";
 import userRoutes from "./routes/user.route.js";
 import morgan from 'morgan'
 import cors from "cors";
+import dns from "node:dns";
+
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
 const app = express();
 

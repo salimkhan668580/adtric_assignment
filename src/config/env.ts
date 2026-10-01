@@ -19,4 +19,5 @@ export const env = {
   MONGO_URI: required("MONGO_URI"),
   JWT_SECRET: required("JWT_SECRET"),
   JWT_EXPIRES_IN: (process.env.JWT_EXPIRES_IN || "7d") as SignOptions["expiresIn"],
+  WEBHOOK_URL: process.env.WEBHOOK_URL,
 };

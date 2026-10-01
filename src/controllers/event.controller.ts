@@ -4,22 +4,11 @@ import eventService from "../services/event.service.js";
 import type { IEvent } from "../models/events.js";
 import { getEventsQuerySchema, publicEventsQuerySchema } from "../zod/event.zod.js";
 import { EVENT_UPLOAD_URL, removeEventImage } from "../middlewares/upload.middleware.js";
+import { buildPagination } from "../utils/pagination.js";
 
 const isDuplicateSlugError = (error: unknown) => {
     const err = error as { code?: number; keyPattern?: Record<string, unknown> };
     return err?.code === 11000 && Boolean(err.keyPattern?.slug);
-}
-
-const buildPagination = (page: number, limit: number, total: number) => {
-    const totalPages = Math.ceil(total / limit);
-    return {
-        page,
-        limit,
-        total,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-    };
 }
 
 const getUploadedImagePath = (req: Request) =>
