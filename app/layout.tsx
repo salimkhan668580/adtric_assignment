@@ -20,6 +20,11 @@ export const metadata: Metadata = {
   },
   description:
     "The Manthan School — admissions, news, events and achievements.",
+  icons: {
+    icon: "https://adtric.com/wp-content/uploads/2025/01/cropped-favicon-icon-32x32.png",
+    shortcut: "https://adtric.com/wp-content/uploads/2025/01/cropped-favicon-icon-32x32.png",
+    apple: "https://adtric.com/wp-content/uploads/2025/01/cropped-favicon-icon-32x32.png",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
